@@ -52,6 +52,9 @@ make install
 <p>
     <ul>
         <li>
+            <a href="http://www.probabilistic-robotics.org/">Probabilistic Robotics</a>
+        </li>
+        <li>
             <a href="https://cse.sc.edu/~terejanu/files/tutorialMC.pdf">Tutorial on Monte Carlo Techniques</a>
         </li>
         <li>
