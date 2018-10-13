@@ -54,7 +54,7 @@ int main(int argc, char** argv)
     Eigen::MatrixXd particles(particle_num, 3);
     Eigen::VectorXd init_weight(Eigen::MatrixXd::Constant(particle_num, 1, 1./particle_num));
     Eigen::MatrixXd init_covariance(Eigen::MatrixXd::Identity(3,3)*1.);
-    Eigen::MatrixXd resample_covariance(Eigen::MatrixXd::Identity(3,3)*1e-2);
+    Eigen::MatrixXd resample_covariance(Eigen::MatrixXd::Identity(3,3));
 
     Eigen::MatrixXd covariance(init_covariance);
     Eigen::VectorXd weight(init_weight);
@@ -69,7 +69,6 @@ int main(int argc, char** argv)
         lidar_pose = vehicle.GetState();
         Eigen::VectorXd measurement = 
             SimLidarDetection(lidar_pose, lidar_resolution, lidar_range, edge_mat);
-        double best_likelihood = 0;
         {
             Eigen::MatrixXd measurement_particles(particle_num, lidar_resolution);
             for(int i = 0; i < particle_num; i++)
@@ -79,30 +78,14 @@ int main(int argc, char** argv)
                 measurement_particles.row(i) = 
                     SimLidarDetection(particles.row(i), lidar_resolution, lidar_range, edge_mat);
             }
-            
-            auto p_weight = CalculateMeasurementWeight(
-                measurement_particles, 
-                measurement, 
-                weight, 
-                lidar_measurement_variance,
-                best_likelihood);
-            cout << "best_likelihood: " << best_likelihood << endl;
- 
-            weight = *p_weight;
-            Eigen::Vector3d estimate = particles.transpose() * weight;
-            covariance = *CalculateCovariance(particles, weight);
-            veh_est.SetState(estimate);
-            // cout << "weight: " << weight.transpose() << endl;
-            cout << "est: " << veh_est.GetState().transpose() << endl;
-        
-            double shrink_coeff = best_likelihood > 0. ? 1e-3 : fabs(best_likelihood/(lidar_resolution*log(1e-6)));
-            cout << "shrink_coeff: " << shrink_coeff << endl;
-            
-            Resampling(
-                particles, 
-                weight, 
-                shrink_coeff * init_covariance,
-                particle_num/2.);
+            auto estimate_pose = ParticleFilterUpdate(
+                                    measurement, 
+                                    measurement_particles,
+                                    particles,
+                                    weight,
+                                    lidar_measurement_variance,
+                                    resample_covariance);
+            veh_est.SetState(estimate_pose); 
         }
             
         auto VizMat = LidarMeasurementToVizPoint(measurement, veh_est.GetState(), lidar_resolution, lidar_range);

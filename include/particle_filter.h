@@ -13,12 +13,10 @@ inline void Resampling(
     const Eigen::MatrixXd& estimate_covariance, 
     double n_th)
 {
-    // Neff = 1.0 / (pw * pw.T)[0, 0]  # Effective particle number
     double n_eff = 1./(weight_vec.transpose()*weight_vec)(0);
     if(n_eff > n_th) return;
 
     srand (time(NULL));
-    // std::cout << "weight: " << weight_vec.transpose() << std::endl;
     std::cout << "do resample!" << std::endl;
     
     int particle_num = weight_vec.size();
@@ -34,31 +32,28 @@ inline void Resampling(
         resample_id(i) = base_cum_sum(i) + ((float)rand()/RAND_MAX - 1.)/particle_num;
     }
     base_cum_sum.array() -= 1./particle_num;
-
+    
     std::vector<int> indices;
     int weight_idx = 0;
     for(int particle_idx = 0; particle_idx < particle_num; particle_idx++)
     {
         while(resample_id(particle_idx) > weight_cum_sum(weight_idx))
         {
-            // std::cout << "give up weight_idx: " << weight_idx << ", with value: " << weight_vec(weight_idx) << std::endl;
             weight_idx++;
         }
             
         indices.push_back(weight_idx);
     }
-    
+
     if(particle_mat.rows() != indices.size())
-        throw std::runtime_error("la;sdlkfja;lksdf");
+        throw std::runtime_error("dimension mismatch");
 
     for(int i = 0; i < particle_mat.rows(); i++)
     {
         particle_mat.row(i) = particle_mat.row(indices.at(i));
     }
-    // std::cout << "abcde!" << std::endl;
     MVN_RNG rng(Eigen::VectorXd::Zero(particle_mat.cols()), estimate_covariance);
     particle_mat += *rng.GenerateRandoms(particle_num);
-    // std::cout << "sdadfasdf!" << std::endl;
     weight_vec.array() = 1./particle_num;
 }
 
@@ -105,8 +100,6 @@ CalculateMeasurementWeight(
     double weight_sum = p_weight_vec->sum();
     
     (*p_weight_vec) /= weight_sum;
-    std::cout << "max prob: " << p_weight_vec->array().maxCoeff() << std::endl;
-    // std::cout << "p_weight_vec normed: " << p_weight_vec->transpose() << std::endl;
     return p_weight_vec;
 }
 #if 0
@@ -150,5 +143,42 @@ CalculateCovariance(
     return p_covariance;
 }
 #endif
+
+inline Eigen::VectorXd ParticleFilterUpdate(
+    const Eigen::VectorXd& actual_measure_vec, 
+    const Eigen::MatrixXd& particle_measure_mat,
+    Eigen::MatrixXd& particles,
+    Eigen::VectorXd& weight_vec,
+    double lidar_measurement_variance,
+    const Eigen::MatrixXd& resample_covariance)
+{
+    int particle_num = particles.rows();
+    int measurement_num = particle_measure_mat.rows();
+
+    double best_likelihood = 0.;
+    auto p_weight = CalculateMeasurementWeight(
+        particle_measure_mat, 
+        actual_measure_vec, 
+        weight_vec, 
+        lidar_measurement_variance,
+        best_likelihood);
+    std::cout << "best_likelihood: " << best_likelihood << std::endl;
+
+    weight_vec = *p_weight;
+    Eigen::VectorXd estimate = particles.transpose() * weight_vec;
+    auto covariance = *CalculateCovariance(particles, weight_vec);
+
+    std::cout << "est: " << estimate.transpose() << std::endl;
+
+    double shrink_coeff = best_likelihood > 0. ? 1e-3 : fabs(best_likelihood/(measurement_num*log(1e-6)));
+    std::cout << "shrink_coeff: " << shrink_coeff << std::endl;
+    
+    Resampling(
+        particles, 
+        weight_vec, 
+        shrink_coeff * resample_covariance,
+        particle_num/2.);
+    return estimate;
+}
 
 #endif
